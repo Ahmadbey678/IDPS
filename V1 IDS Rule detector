@@ -1,0 +1,77 @@
+import socket
+import struct
+
+# 1. Array of unsafe IPs
+unsafe_ips = ["192.168.1.100", "10.0.0.2", "172.16.0.5"]
+
+# 2. Large packet threshold (in bytes)
+large_packet_threshold = 1500  # Example threshold
+
+# 3. Forbidden URLs or keywords
+forbidden_urls = ["example.com", "malware", "phishing"]
+
+# 4. SYN attack detection
+syn_attack_threshold = 100  # Example threshold
+syn_attack_window = 60  # Time window in seconds
+
+# Dictionary to store SYN packet count per source IP
+syn_packet_count = {}
+
+def analyze_packet(packet):
+    # Parse Ethernet header
+    eth_header = packet[:14]
+    eth_header_parsed = struct.unpack("!6s6sH", eth_header)
+    eth_type = eth_header_parsed[2]
+
+    # Parse IP header if it's an IP packet (Ethernet type 0x0800)
+    if eth_type == 0x0800:
+        ip_header = packet[14:34]
+        ip_header_parsed = struct.unpack("!BBHHHBBH4s4s", ip_header)
+        ip_header_length = (ip_header_parsed[0] & 0xF) * 4
+        ip_protocol = ip_header_parsed[6]
+        ip_src_ip = socket.inet_ntoa(ip_header_parsed[8])
+
+        # 1. Unsafe IP detection
+        if ip_src_ip in unsafe_ips:
+            print("Alert: Unsafe IP detected:", ip_src_ip)
+
+        # 2. Large packet detection
+        packet_size = len(packet)
+        if packet_size > large_packet_threshold:
+            print("Alert: Large packet detected ({} bytes)".format(packet_size))
+
+        # 3. Forbidden URL detection (assuming HTTP traffic)
+        if ip_protocol == 6:  # TCP
+            tcp_header = packet[14 + ip_header_length:34 + ip_header_length]
+            tcp_src_port = struct.unpack("!H", tcp_header[0:2])[0]
+            tcp_dest_port = struct.unpack("!H", tcp_header[2:4])[0]
+
+            if tcp_dest_port == 80:  # HTTP traffic
+                payload = packet[14 + ip_header_length + 20:]
+                for url in forbidden_urls:
+                    if url.encode() in payload:
+                        print("Alert: Forbidden URL detected:", url)
+
+        # 4. SYN attack detection
+        if ip_protocol == 6:  # TCP
+            tcp_flags = struct.unpack("!BB", packet[14 + ip_header_length + 13:14 + ip_header_length + 15])[0]
+            syn_flag = (tcp_flags & 0x02) >> 1
+
+            if syn_flag:  # SYN packet
+                if ip_src_ip in syn_packet_count:
+                    syn_packet_count[ip_src_ip] += 1
+                else:
+                    syn_packet_count[ip_src_ip] = 1
+
+                # Check if SYN packet count exceeds threshold
+                if syn_packet_count[ip_src_ip] > syn_attack_threshold:
+                    print("Alert: SYN attack detected from", ip_src_ip)
+
+if __name__ == "__main__":
+    print("Intrusion Detection and Prevention System (IDPS) started...")
+    # Create a raw socket
+    s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
+    # Continuously capture and analyze packets
+    while True:
+        packet, _ = s.recvfrom(65536)
+        analyze_packet(packet)
