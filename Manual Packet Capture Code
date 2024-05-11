@@ -1,0 +1,62 @@
+import socket
+import struct
+
+def capture_packets():
+    # Create a raw socket
+    s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
+    
+    while True:
+        # Receive a packet
+        packet, _ = s.recvfrom(65536)
+        
+        # Parse Ethernet header
+        eth_header = packet[:14]
+        eth_header_parsed = struct.unpack("!6s6sH", eth_header)
+        eth_dest_mac = ":".join("{:02x}".format(c) for c in eth_header_parsed[0])
+        eth_src_mac = ":".join("{:02x}".format(c) for c in eth_header_parsed[1])
+        eth_type = eth_header_parsed[2]
+
+        # Print Ethernet header information
+        print("Ethernet Destination MAC:", eth_dest_mac)
+        print("Ethernet Source MAC:", eth_src_mac)
+        print("Ethernet Type:", hex(eth_type))
+
+        # Parse IP header if it's an IP packet (Ethernet type 0x0800)
+        if eth_type == 0x0800:
+            ip_header = packet[14:34]
+            ip_header_parsed = struct.unpack("!BBHHHBBH4s4s", ip_header)
+            ip_version = ip_header_parsed[0] >> 4
+            ip_header_length = (ip_header_parsed[0] & 0xF) * 4
+            ip_ttl = ip_header_parsed[5]
+            ip_protocol = ip_header_parsed[6]
+            ip_src_ip = socket.inet_ntoa(ip_header_parsed[8])
+            ip_dest_ip = socket.inet_ntoa(ip_header_parsed[9])
+
+            # Print IP header information
+            print("IP Version:", ip_version)
+            print("IP Header Length:", ip_header_length)
+            print("IP TTL:", ip_ttl)
+            print("IP Protocol:", ip_protocol)
+            print("IP Source IP:", ip_src_ip)
+            print("IP Destination IP:", ip_dest_ip)
+
+            # If it's a TCP packet (protocol number 6), parse TCP header
+            if ip_protocol == 6:
+                tcp_header = packet[14 + ip_header_length:14 + ip_header_length + 20]
+                tcp_header_parsed = struct.unpack("!HHLLBBHHH", tcp_header)
+                tcp_src_port = tcp_header_parsed[0]
+                tcp_dest_port = tcp_header_parsed[1]
+                tcp_seq_num = tcp_header_parsed[2]
+                tcp_ack_num = tcp_header_parsed[3]
+
+                # Print TCP header information
+                print("TCP Source Port:", tcp_src_port)
+                print("TCP Destination Port:", tcp_dest_port)
+                print("TCP Sequence Number:", tcp_seq_num)
+                print("TCP Acknowledgment Number:", tcp_ack_num)
+
+        print("")
+
+if __name__ == "__main__":
+ print("Packet Capturing has started...")
+ capture_packets()
